@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches:
+     - main
+     - master
+     - next
+     - 'v*'
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+jobs:
+  dependency-review:
+      name: Dependency Review
+      if: github.event_name == 'pull_request'
+      runs-on: ubuntu-latest
+      permissions:
+        contents: read
+      steps:
+          - name: Check out repo
+            uses: actions/checkout@v4
+            with:
+              persist-credentials: false
+
+          - name: Dependency review
+            uses: actions/dependency-review-action@v4
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm i --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+  test:
+    name: Run tests for next ${{ matrix.next-version }} with node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        next-version: [12, 13]
+        node-version: [ 20, 22 ]
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm i --ignore-scripts
+
+      - name: Install next 12 (if necessary)
+        if: matrix.next-version == 12
+        run: npm install next@12
+
+      - name: Run tests
+        run: npm test
+
+  automerge:
+    name: Automatically merge Dependabot pull requests
+    if: >
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.user.login == 'dependabot[bot]'
+    needs:
+      - dependency-review
+      - lint
+      - test
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: fastify/github-action-merge-dependabot@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
